@@ -1,0 +1,31 @@
+# 编译生成的文件
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+capture_video
+
+# CMake生成的文件
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE生成的文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 录制的视频文件
+videos/
+
+# 日志文件
+*.log
