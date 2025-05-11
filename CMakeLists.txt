@@ -30,6 +30,7 @@ set(SOURCES
     src/camera_device.cpp
     src/video_capture.cpp
     src/video_recorder.cpp
+    src/ffmpeg_recorder.cpp
     src/file_manager.cpp
     src/frame_extractor.cpp
     src/gui.cpp

@@ -1,6 +1,7 @@
 #include "camera_device.h"
 #include "video_capture.h"
 #include "video_recorder.h"
+#include "ffmpeg_recorder.h"
 #include "file_manager.h"
 #include "frame_extractor.h"
 #include "gui.h"
@@ -159,19 +160,15 @@ int main(int argc, char** argv) {
                 return 1;
             }
 
-            // 打开设备
-            std::cout << "打开设备: " << devices[deviceIndex].deviceName << std::endl;
-            if (!cameraDevice->openDevice(devices[deviceIndex].devicePath)) {
-                std::cerr << "无法打开设备" << std::endl;
-                return 1;
-            }
+            // 获取设备路径
+            std::string devicePath = devices[deviceIndex].devicePath;
+            std::cout << "使用设备: " << devices[deviceIndex].deviceName << " (" << devicePath << ")" << std::endl;
 
-            // 初始化视频捕获和录制
-            auto videoCapture = std::make_shared<VideoCapture>();
-            auto videoRecorder = std::make_shared<VideoRecorder>();
+            // 初始化FFmpeg录制器
+            auto ffmpegRecorder = std::make_shared<FFmpegRecorder>();
 
-            if (!videoRecorder->init(videoDir)) {
-                std::cerr << "无法初始化视频录制器" << std::endl;
+            if (!ffmpegRecorder->init(videoDir)) {
+                std::cerr << "无法初始化FFmpeg录制器" << std::endl;
                 return 1;
             }
 
@@ -179,26 +176,10 @@ int main(int argc, char** argv) {
             Resolution resolution(width, height);
             std::cout << "设置分辨率: " << resolution.toString() << ", 帧率: " << fps << std::endl;
 
-            if (!videoCapture->init(*cameraDevice, resolution, fps)) {
-                std::cerr << "无法初始化视频捕获" << std::endl;
-                return 1;
-            }
-
-            // 设置帧回调
-            videoCapture->setFrameCallback([&videoRecorder](const cv::Mat& frame) {
-                videoRecorder->processFrame(frame);
-            });
-
-            // 开始捕获和录制
-            std::cout << "开始捕获和录制..." << std::endl;
-            if (!videoCapture->start()) {
-                std::cerr << "无法开始视频捕获" << std::endl;
-                return 1;
-            }
-
-            if (!videoRecorder->startRecording(resolution, fps)) {
+            // 开始录制
+            std::cout << "开始录制..." << std::endl;
+            if (!ffmpegRecorder->startRecording(devicePath, resolution, fps)) {
                 std::cerr << "无法开始视频录制" << std::endl;
-                videoCapture->stop();
                 return 1;
             }
 
@@ -210,12 +191,11 @@ int main(int argc, char** argv) {
             }
             std::cout << std::endl;
 
-            // 停止录制和捕获
-            std::cout << "停止录制和捕获..." << std::endl;
-            videoRecorder->stopRecording();
-            videoCapture->stop();
+            // 停止录制
+            std::cout << "停止录制..." << std::endl;
+            ffmpegRecorder->stopRecording();
 
-            std::cout << "录制完成，文件保存至: " << videoRecorder->getCurrentFilePath() << std::endl;
+            std::cout << "录制完成，文件保存至: " << ffmpegRecorder->getCurrentFilePath() << std::endl;
             return 0;
         }
 
