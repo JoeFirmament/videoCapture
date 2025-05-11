@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
 
             // 开始录制
             std::cout << "开始录制..." << std::endl;
-            if (!ffmpegRecorder->startRecording(devicePath, resolution, fps)) {
+            if (!ffmpegRecorder->startRecording(devicePath, resolution, fps, recordTime)) {
                 std::cerr << "无法开始视频录制" << std::endl;
                 return 1;
             }
