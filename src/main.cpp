@@ -201,45 +201,55 @@ int main(int argc, char** argv) {
 
         // 提取帧
         if (hasArg(args, "extract")) {
-            std::string filePath = getArgValue(args, "--file=");
-            if (filePath.empty()) {
-                std::cerr << "请指定视频文件路径，例如: --file=/path/to/video.mp4" << std::endl;
+            try {
+                std::string filePath = getArgValue(args, "--file=");
+                if (filePath.empty()) {
+                    std::cerr << "请指定视频文件路径，例如: --file=/path/to/video.mp4" << std::endl;
+                    return 1;
+                }
+
+                // 检查文件是否存在
+                if (!fs::exists(filePath)) {
+                    std::cerr << "文件不存在: " << filePath << std::endl;
+                    return 1;
+                }
+
+                // 初始化帧提取器
+                auto frameExtractor = std::make_shared<FrameExtractor>();
+
+                // 设置进度回调
+                frameExtractor->setProgressCallback([](float progress) {
+                    int percent = static_cast<int>(progress * 100);
+                    std::cout << "提取进度: " << percent << "%\r" << std::flush;
+                });
+
+                // 设置完成回调
+                frameExtractor->setCompletionCallback([](const std::string& outputDir) {
+                    std::cout << std::endl << "提取完成，帧保存至: " << outputDir << std::endl;
+                });
+
+                // 开始提取
+                std::cout << "开始从 " << filePath << " 提取帧..." << std::endl;
+                if (!frameExtractor->startExtraction(filePath)) {
+                    std::cerr << "无法开始帧提取" << std::endl;
+                    return 1;
+                }
+
+                // 不需要等待，因为startExtraction现在是同步的
+
+                // 清理资源
+                std::cout << "清理资源..." << std::endl;
+                frameExtractor = nullptr;
+                std::cout << "帧提取完成" << std::endl;
+
+                return 0;
+            } catch (const std::exception& e) {
+                std::cerr << "帧提取过程中发生异常: " << e.what() << std::endl;
+                return 1;
+            } catch (...) {
+                std::cerr << "帧提取过程中发生未知异常" << std::endl;
                 return 1;
             }
-
-            // 检查文件是否存在
-            if (!fs::exists(filePath)) {
-                std::cerr << "文件不存在: " << filePath << std::endl;
-                return 1;
-            }
-
-            // 初始化帧提取器
-            auto frameExtractor = std::make_shared<FrameExtractor>();
-
-            // 设置进度回调
-            frameExtractor->setProgressCallback([](float progress) {
-                int percent = static_cast<int>(progress * 100);
-                std::cout << "提取进度: " << percent << "%\r" << std::flush;
-            });
-
-            // 设置完成回调
-            frameExtractor->setCompletionCallback([](const std::string& outputDir) {
-                std::cout << std::endl << "提取完成，帧保存至: " << outputDir << std::endl;
-            });
-
-            // 开始提取
-            std::cout << "开始从 " << filePath << " 提取帧..." << std::endl;
-            if (!frameExtractor->startExtraction(filePath)) {
-                std::cerr << "无法开始帧提取" << std::endl;
-                return 1;
-            }
-
-            // 等待提取完成
-            while (frameExtractor->isExtracting()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            return 0;
         }
 
         // 未知命令

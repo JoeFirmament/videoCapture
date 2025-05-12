@@ -32,7 +32,7 @@ set(SOURCES
     src/video_recorder.cpp
     src/ffmpeg_recorder.cpp
     src/file_manager.cpp
-    src/frame_extractor.cpp
+    src/frame_extractor_new.cpp
     src/gui.cpp
     src/utils.cpp
 )

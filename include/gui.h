@@ -3,6 +3,7 @@
 #include "camera_device.h"
 #include "video_capture.h"
 #include "video_recorder.h"
+#include "ffmpeg_recorder.h"
 #include "file_manager.h"
 #include "frame_extractor.h"
 
@@ -54,8 +55,12 @@ private:
     std::shared_ptr<CameraDevice> m_cameraDevice;
     std::shared_ptr<VideoCapture> m_videoCapture;
     std::shared_ptr<VideoRecorder> m_videoRecorder;
+    std::shared_ptr<FFmpegRecorder> m_ffmpegRecorder;
     std::shared_ptr<FileManager> m_fileManager;
     std::shared_ptr<FrameExtractor> m_frameExtractor;
+
+    // 录制模式
+    bool m_useFFmpeg;  // 是否使用FFmpeg录制
 
     // 数据
     std::vector<CameraDeviceInfo> m_cameraDevices;

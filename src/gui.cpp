@@ -16,12 +16,14 @@ GUI::GUI()
       m_selectedFileIndex(-1),
       m_selectedResolutionIndex(0),
       m_selectedFramerateIndex(0),
-      m_hasNewFrame(false) {
+      m_hasNewFrame(false),
+      m_useFFmpeg(true) {  // 默认使用FFmpeg录制
 
     // 创建模块实例
     m_cameraDevice = std::make_shared<CameraDevice>();
     m_videoCapture = std::make_shared<VideoCapture>();
     m_videoRecorder = std::make_shared<VideoRecorder>();
+    m_ffmpegRecorder = std::make_shared<FFmpegRecorder>();
     m_fileManager = std::make_shared<FileManager>();
     m_frameExtractor = std::make_shared<FrameExtractor>();
 }
@@ -42,9 +44,16 @@ bool GUI::init(int width, int height, const std::string& title) {
     }
 
     // 创建窗口
+    // 设置GLFW窗口提示，强制使用OpenGL ES 3.1
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+
+    // 添加更多的窗口提示以提高兼容性
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_FOCUSED, GLFW_TRUE);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
 
     m_window = glfwCreateWindow(m_width, m_height, m_title.c_str(), nullptr, nullptr);
     if (!m_window) {
@@ -72,12 +81,18 @@ bool GUI::init(int width, int height, const std::string& title) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    // 初始化FFmpeg录制器
+    if (!m_ffmpegRecorder->init(m_fileManager->getBaseDir())) {
+        std::cerr << "无法初始化FFmpeg录制器" << std::endl;
+        return false;
+    }
+
     // 设置视频捕获回调
     m_videoCapture->setFrameCallback([this](const cv::Mat& frame) {
         updatePreviewFrame(frame);
 
         // 如果正在录制，处理帧
-        if (m_videoRecorder->isRecording()) {
+        if (!m_useFFmpeg && m_videoRecorder->isRecording()) {
             m_videoRecorder->processFrame(frame);
         }
     });
@@ -132,8 +147,14 @@ void GUI::shutdown() {
         m_videoRecorder->stopRecording();
     }
 
+    // 停止FFmpeg录制
+    if (m_ffmpegRecorder) {
+        m_ffmpegRecorder->stopRecording();
+    }
+
     // 停止分帧
-    if (m_frameExtractor) {
+    if (m_frameExtractor && m_frameExtractor->isExtracting()) {
+        std::cout << "停止分帧进程..." << std::endl;
         m_frameExtractor->stopExtraction();
     }
 
@@ -203,7 +224,8 @@ bool GUI::initImGui() {
         return false;
     }
 
-    if (!ImGui_ImplOpenGL3_Init("#version 330 core")) {
+    // 使用OpenGL ES 3.1
+    if (!ImGui_ImplOpenGL3_Init("#version 310 es")) {
         return false;
     }
 
@@ -443,25 +465,45 @@ void GUI::renderRecordControlPanel() {
             }
         }
 
+        // 录制模式选择
+        ImGui::Checkbox("使用FFmpeg录制", &m_useFFmpeg);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("使用FFmpeg录制可以获得更好的视频质量和兼容性");
+        }
+
         // 录制控制按钮
         if (m_videoCapture->isCapturing()) {
-            if (!m_videoRecorder->isRecording()) {
+            bool isRecording = m_useFFmpeg ? m_ffmpegRecorder->isRecording() : m_videoRecorder->isRecording();
+
+            if (!isRecording) {
                 if (ImGui::Button("开始录像")) {
                     // 获取当前分辨率和帧率
                     Resolution resolution = m_videoCapture->getCurrentResolution();
                     int framerate = m_videoCapture->getCurrentFramerate();
 
-                    // 开始录制
-                    m_videoRecorder->startRecording(resolution, framerate);
+                    if (m_useFFmpeg) {
+                        // 使用FFmpeg录制
+                        std::string devicePath = m_cameraDevice->getCurrentDeviceInfo().devicePath;
+                        m_ffmpegRecorder->startRecording(devicePath, resolution, framerate);
+                    } else {
+                        // 使用OpenCV录制
+                        m_videoRecorder->startRecording(resolution, framerate);
+                    }
                 }
             } else {
                 // 显示录制时长
-                double duration = m_videoRecorder->getRecordingDuration();
+                double duration = m_useFFmpeg ?
+                                 m_ffmpegRecorder->getRecordingDuration() :
+                                 m_videoRecorder->getRecordingDuration();
                 ImGui::Text("录制时长: %s", Utils::formatTime(duration).c_str());
 
                 if (ImGui::Button("停止录像")) {
                     // 停止录制
-                    m_videoRecorder->stopRecording();
+                    if (m_useFFmpeg) {
+                        m_ffmpegRecorder->stopRecording();
+                    } else {
+                        m_videoRecorder->stopRecording();
+                    }
 
                     // 刷新文件列表
                     std::vector<VideoFileInfo> videoFiles = m_fileManager->getVideoFileList();
@@ -527,18 +569,21 @@ void GUI::renderFrameExtractionPanel() {
 
             if (!m_frameExtractor->isExtracting()) {
                 if (ImGui::Button("开始分帧")) {
-                    // 设置进度回调
-                    m_frameExtractor->setProgressCallback([](float progress) {
-                        // 可以在这里更新进度条
-                    });
+                    // 创建一个新线程来执行分帧，避免阻塞GUI
+                    std::thread([this, filePath = file.filePath]() {
+                        // 设置进度回调
+                        m_frameExtractor->setProgressCallback([](float progress) {
+                            // 进度回调在另一个线程中，不能直接更新UI
+                        });
 
-                    // 设置完成回调
-                    m_frameExtractor->setCompletionCallback([this](const std::string& outputDir) {
-                        // 分帧完成后的操作
-                    });
+                        // 设置完成回调
+                        m_frameExtractor->setCompletionCallback([](const std::string& outputDir) {
+                            std::cout << "分帧完成，帧保存至: " << outputDir << std::endl;
+                        });
 
-                    // 开始分帧
-                    m_frameExtractor->startExtraction(file.filePath);
+                        // 开始分帧
+                        m_frameExtractor->startExtraction(filePath);
+                    }).detach();  // 分离线程，让它在后台运行
                 }
             } else {
                 // 显示进度
